@@ -1,4 +1,4 @@
-# DNA Word Design Problem - SAT Solver
+# Word Design for DNA Computing on Surfaces - SAT Solver
 
 Cieľom je nájsť čo najväčšiu množinu slov dĺžky 8, ktoré spĺňajú špecifické podmienky.
 
@@ -6,12 +6,12 @@ Cieľom je nájsť čo najväčšiu množinu slov dĺžky 8, ktoré spĺňajú �
 
 Hľadáme množinu $S$ obsahujúcu $K$ slov nad abecedou $\{A, C, G, T\}$. Každé slovo má pevnú dĺžku $L=8$.
 
-### Parametre a rozhodovacie premenné
+### Parametre a premenné
 
 - **Abeceda:** 4 znaky (A, C, G, T).
 - **Dĺžka slova:** 8 znakov.
 - **Veľkosť množiny ($K$):** Počet hľadaných slov.
-- **Rozhodovacie premenné:**  
+- **Premenné:**  
   $X_{w,i,c}$ je binárna premenná, ktorá je pravdivá (True), ak slovo $w$ na pozícii $i$ obsahuje znak $c$.
 
 ### Podmienky
@@ -27,7 +27,7 @@ Riešenie musí spĺňať nasledujúce podmienky:
 3. **Hammingova vzdialenosť:**  
    Každá dvojica rôznych slov $u, v \in S$ sa musí líšiť aspoň na 4 pozíciách ($H(u, v) \ge 4$).
 
-4. **Vzdialenosť voči reverznému komplementu:**  
+4. **Reverzný komplement:**  
    Pre každú dvojicu slov $u, v \in S$ (vrátane prípadu $u=v$) musí platiť:  
    $H(u, v^{RC}) \ge 4$  
    kde $v^{RC}$ je reverzný komplement slova.
@@ -91,6 +91,7 @@ Word 1: ACGTACGT
 Word 2: GGTCCATG
 ----------------------------------------
 ```
+
 ## 5. Experimenty
 
 Experimenty boli vykonané na nasledujúcej konfigurácii:
@@ -102,7 +103,7 @@ Experimenty boli vykonané na nasledujúcej konfigurácii:
 
 ### Výsledky
 
-Skript dokázal v rozumnom čase nájsť riešenie pre **K = 72** slov.
+Program dokázal v rozumnom čase nájsť riešenie pre **K = 72** slov.
 
 | K | Čas výpočtu | Výsledok |
 |---|-------------|----------|
@@ -117,6 +118,6 @@ Skript dokázal v rozumnom čase nájsť riešenie pre **K = 72** slov.
 ### Pozorovania
 
 - **Malé inštancie ($K \le 30$):** riešenie sa nájce veľmi rýchlo, často do 3 sekúnd.  
-- **Nelineárny nárast náročnosti:** od $K = 50$ začína čas rásť strmšie; medzi $K = 60$ a $K = 72$ je zrýchlenie rastu výrazné (viac ako 4×).  
-- **Maximálna dosiahnutá veľkosť:**  
+- **Nárast:** od $K = 50$ začína čas rásť strmšie; medzi $K = 60$ a $K = 72$ je zrýchlenie výraznejšie (viac ako 4×).  
+- **Maximálny počet slov:**  
   Skript úspešne vygeneroval **72 slov** spĺňajúcich všetky kritériá (GC obsah, Hamming, RC Hamming).
