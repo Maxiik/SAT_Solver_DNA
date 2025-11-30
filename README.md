@@ -76,7 +76,7 @@ python3 word_desing_dna.py [-h] [-s SOLVER] [-o OUTPUT] [-v {0,1}] [-k FIXED_K]
 ### Argumenty
 
 - `-o, --output` — názov výstupného CNF súboru (default: `formula.cnf`)  
-- `-s, --solver` — cesta k solveru (default: `glucose-syrup`)  
+- `-s, --solver` — cesta k solveru (default: `glucose`)  
 - `-v, --verb` — verbosity solvera 
 - `-k, --fixed_k` — vyrieši len pre konkrétne $K$
 
