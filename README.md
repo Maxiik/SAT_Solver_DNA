@@ -100,7 +100,7 @@ Experimenty boli vykonané na nasledujúcej konfigurácii:
 - **OS:** Windows 11 Pro (WSL/Linux prostredie)  
 - **Solver:** glucose-syrup  
 
-### Výsledky škálovania
+### Výsledky
 
 Skript dokázal v rozumnom čase nájsť riešenie pre **K = 72** slov.
 
