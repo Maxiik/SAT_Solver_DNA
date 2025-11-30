@@ -1,163 +1,237 @@
 import subprocess
-import itertools
-from argparse import ArgumentParser
 import sys
+import time
+from argparse import ArgumentParser
 
-# ==========================================
-# 1. KONŠTANTY A NASTAVENIA
-# ==========================================
-length = 8
-alphabet = 4
+# ==============================================================================
+# PROBLEM SETTINGS (DNA Word Set Design)
+# ==============================================================================
+WORD_LENGTH = 8      # Length of one word
+ALPHABET_SIZE = 4    # Size of the alphabet (A, C, G, T)
+CHARS = "ACGT"       # Mapping: 0=A, 1=C, 2=G, 3=T
 
-# ==========================================
-# 2. LOGICKÉ FUNKCIE (Tvoje, sú správne)
-# ==========================================
-def get_var(w, i, c):
-    return (w * length * alphabet) + (i * alphabet) + c + 1
+# ==============================================================================
+# HELPER FUNCTIONS (Manual implementation without external libraries)
+# ==============================================================================
 
-def add_at_most_k(cnf, variables, k):
-    """Zakáže všetky kombinácie veľkosti k+1."""
-    for combo in itertools.combinations(variables, k + 1):
-        clause = [-x for x in combo] + [0]
+def get_var_id(w, i, c):
+    """
+    Maps the triplet (word_index, position, char_index) to a single integer for the SAT solver.
+    w: word index (0..K-1)
+    i: position in word (0..WORD_LENGTH-1)
+    c: character index (0..3)
+    """
+    # +1 because DIMACS format requires variables starting from 1
+    return (w * WORD_LENGTH * ALPHABET_SIZE) + (i * ALPHABET_SIZE) + c + 1
+
+def generate_combinations(elements, k):
+    """Recursively generates all combinations of length k from the list 'elements'."""
+    if k == 0:
+        return [[]]
+    if not elements:
+        return []
+    
+    head = elements[0]
+    tail = elements[1:]
+    
+    # Recursion: either we include the head or we don't
+    with_head = []
+    for combo in generate_combinations(tail, k - 1):
+        with_head.append([head] + combo)
+        
+    without_head = generate_combinations(tail, k)
+    
+    return with_head + without_head
+
+def add_at_most_k_constraint(cnf, variables, k):
+    """
+    Adds clauses to CNF ensuring that at most 'k' variables from the list are True.
+    Principle: We forbid all combinations of size k+1.
+    """
+    forbidden_combinations = generate_combinations(variables, k + 1)
+    
+    for combo in forbidden_combinations:
+        # Clause: (NOT a OR NOT b OR ...)
+        clause = []
+        for var in combo:
+            clause.append(-var)
+        clause.append(0) # 0 is the line terminator in DIMACS
         cnf.append(clause)
 
-def add_clause(cnf, literals):
-    cnf.append(literals + [0])
+# ==============================================================================
+# ENCODING (Translation to CNF)
+# ==============================================================================
 
 def encode(K):
-    """Vygeneruje CNF formulu pre hľadanie K slov."""
+    """
+    Generates CNF formula for finding a set of K words.
+    Returns: (list_of_clauses, number_of_variables_used)
+    """
     cnf = []
     
-    # Počet základných premenných
-    basic_vars_count = K * length * alphabet
-    # Pomocné premenné začínajú hneď za základnými
-    next_aux_var = basic_vars_count + 1
+    # Basic variables for letters
+    num_basic_vars = K * WORD_LENGTH * ALPHABET_SIZE
+    # Auxiliary variables start after the basic ones
+    current_aux_var = num_basic_vars + 1
 
-    # --- 1. FYZIKA ---
+    # 1. PHYSICAL CONSTRAINTS: Exactly one letter per position
     for w in range(K):
-        for i in range(length):
-            vars_pos = [get_var(w, i, c) for c in range(alphabet)]
-            add_clause(cnf, vars_pos)       # Aspoň jeden
-            add_at_most_k(cnf, vars_pos, 1) # Najviac jeden
+        for i in range(WORD_LENGTH):
+            vars_at_pos = [get_var_id(w, i, c) for c in range(ALPHABET_SIZE)]
+            
+            # At least one letter
+            cnf.append(vars_at_pos + [0])
+            
+            # At most one letter
+            add_at_most_k_constraint(cnf, vars_at_pos, 1)
 
-    # --- 2. GC-CONTENT ---
+    # 2. GC-CONTENT: Exactly 4 characters must be C or G
     for w in range(K):
-        cg_vars = []
-        at_vars = []
-        for i in range(length):
-            cg_vars.append(get_var(w, i, 1)) # C
-            cg_vars.append(get_var(w, i, 2)) # G
-            at_vars.append(get_var(w, i, 0)) # A
-            at_vars.append(get_var(w, i, 3)) # T
-        add_at_most_k(cnf, cg_vars, 4)
-        add_at_most_k(cnf, at_vars, 4)
+        cg_vars = [] # C(1) or G(2)
+        at_vars = [] # A(0) or T(3)
+        for i in range(WORD_LENGTH):
+            cg_vars.append(get_var_id(w, i, 1))
+            cg_vars.append(get_var_id(w, i, 2))
+            at_vars.append(get_var_id(w, i, 0))
+            at_vars.append(get_var_id(w, i, 3))
+        
+        # To have exactly 4, we enforce: max 4 are CG and max 4 are AT
+        add_at_most_k_constraint(cnf, cg_vars, 4)
+        add_at_most_k_constraint(cnf, at_vars, 4)
 
-    # --- 3. HAMMINGOVA VZDIALENOSŤ ---
+    # 3. HAMMING DISTANCE: Distinct words differ in at least 4 positions
     for w1 in range(K):
         for w2 in range(w1 + 1, K):
-            match_vars = []
-            for i in range(length):
-                m_var = next_aux_var
-                next_aux_var += 1
-                match_vars.append(m_var)
-                for c in range(alphabet):
-                    v1 = get_var(w1, i, c)
-                    v2 = get_var(w2, i, c)
-                    add_clause(cnf, [-v1, -v2, m_var])
-            add_at_most_k(cnf, match_vars, 4)
+            matches = []
+            for i in range(WORD_LENGTH):
+                # Create a new auxiliary variable for match at this position
+                p_var = current_aux_var
+                current_aux_var += 1
+                matches.append(p_var)
+                
+                # If both words have the same char, p_var must be TRUE
+                # Implication: (v1 AND v2) -> p_var  <=>  (-v1 OR -v2 OR p_var)
+                for c in range(ALPHABET_SIZE):
+                    v1 = get_var_id(w1, i, c)
+                    v2 = get_var_id(w2, i, c)
+                    cnf.append([-v1, -v2, p_var, 0])
+            
+            # Max 4 matches implies Min 4 differences
+            add_at_most_k_constraint(cnf, matches, 4)
 
-    # --- 4. REVERSE COMPLEMENT (WC) ---
+    # 4. REVERSE COMPLEMENT: Watson-Crick pairing constraint
     for w1 in range(K):
-        for w2 in range(K): 
-            wc_vars = []
-            for i in range(length):
-                wc_var = next_aux_var
-                next_aux_var += 1
-                wc_vars.append(wc_var)
+        for w2 in range(K): # Check every pair, including self
+            wc_matches = []
+            for i in range(WORD_LENGTH):
+                wc_var = current_aux_var
+                current_aux_var += 1
+                wc_matches.append(wc_var)
+                
+                # Compare w1[end-i] with w2[i]
+                pos_1 = WORD_LENGTH - 1 - i
+                
+                # Watson-Crick pairs: A-T, T-A, C-G, G-C
+                # Indices: 0-3, 3-0, 1-2, 2-1
                 pairs = [(0,3), (3,0), (1,2), (2,1)]
+                
                 for c1, c2 in pairs:
-                    v1 = get_var(w1, 7 - i, c1)
-                    v2 = get_var(w2, i, c2)
-                    add_clause(cnf, [-v1, -v2, wc_var])
-            add_at_most_k(cnf, wc_vars, 4)
+                    v1 = get_var_id(w1, pos_1, c1)
+                    v2 = get_var_id(w2, i, c2)
+                    cnf.append([-v1, -v2, wc_var, 0])
+            
+            # Max 4 WC-matches implies Min 4 differences
+            add_at_most_k_constraint(cnf, wc_matches, 4)
 
-    return cnf, next_aux_var - 1
+    return cnf, current_aux_var - 1
 
-# ==========================================
-# 3. VOLANIE SOLVERA A VÝPIS
-# ==========================================
-def print_result(result, K):
-    # Kontrola návratového kódu (10 = SAT, 20 = UNSAT)
-    if result.returncode != 10:
+# ==============================================================================
+# RESULT PROCESSING
+# ==============================================================================
+
+def call_solver(cnf, nr_vars, output_name, solver_name, verbosity):
+    # Write to DIMACS format
+    with open(output_name, "w") as file:
+        file.write(f"p cnf {nr_vars} {len(cnf)}\n")
+        for clause in cnf:
+            file.write(" ".join(map(str, clause)) + "\n")
+
+    # Run the solver
+    cmd = ['./' + solver_name, '-model', '-verb=' + str(verbosity), output_name]
+    try:
+        start_time = time.time()
+        # Capture both stdout and stderr
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        end_time = time.time()
+        return result, end_time - start_time
+    except FileNotFoundError:
+        # Fallback for Windows if .exe extension is missing
+        if not solver_name.endswith(".exe"):
+            cmd[0] += ".exe"
+            return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE), 0
+        raise
+
+def print_result(result, K, time_taken):
+    # Check return code (10 = SAT, 20 = UNSAT)
+    if result.returncode != 10: 
+        print(f"For K={K}: UNSAT (No solution found). Time: {time_taken:.2f}s")
         return False
 
-    model = []
+    print(f"For K={K}: SAT (Solution found!). Time: {time_taken:.2f}s")
+    
+    # Parse the model from output
     output = result.stdout.decode('utf-8')
+    model = []
     for line in output.splitlines():
         if line.startswith("v"):
             parts = line.split()[1:]
             model.extend(int(x) for x in parts)
-    
-    print(f"\n[SAT] Našiel som sadu {K} slov:")
-    print("-" * 30)
-    chars = "ACGT"
+
+    print("-" * 40)
     for w in range(K):
         word_str = ""
-        for i in range(length):
-            for c in range(alphabet):
-                var_idx = get_var(w, i, c)
-                if var_idx in model:
-                    word_str += chars[c]
-        print(f"Slovo {w+1}: {word_str}")
-    print("-" * 30)
+        for i in range(WORD_LENGTH):
+            for c in range(ALPHABET_SIZE):
+                if get_var_id(w, i, c) in model:
+                    word_str += CHARS[c]
+        print(f"Word {w+1}: {word_str}")
+    print("-" * 40 + "\n")
     return True
 
-def call_solver(cnf, nr_vars, output_name, solver_name, verbosity):
-    with open(output_name, "w") as file:
-        file.write(f"p cnf {nr_vars} {len(cnf)}\n")
-        for clause in cnf:
-            file.write(' '.join(str(lit) for lit in clause) + '\n')
+# ==============================================================================
+# MAIN execution
+# ==============================================================================
 
-    # Automatická detekcia .exe pre Windows
-    cmd = ['./' + solver_name, '-model', '-verb=' + str(verbosity) , output_name]
-    try:
-        return subprocess.run(cmd, stdout=subprocess.PIPE)
-    except FileNotFoundError:
-        # Fallback ak užívateľ zabudol napísať .exe
-        cmd[0] += ".exe"
-        return subprocess.run(cmd, stdout=subprocess.PIPE)
-
-# ==========================================
-# 4. HLAVNÝ PROGRAM (LOOP)
-# ==========================================
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("-o", "--output", default="formula.cnf", type=str)
-    # Tu si nastav názov tvojho solvera (napr. glucose.exe)
-    parser.add_argument("-s", "--solver", default="glucose-syrup", type=str)
-    parser.add_argument("-v", "--verb", default=1, type=int)
+    parser.add_argument("-o", "--output", default="formula.cnf", help="Output file for CNF")
+    parser.add_argument("-s", "--solver", default="glucose-syrup", help="Solver executable")
+    parser.add_argument("-v", "--verb", default=1, type=int, help="Verbosity")
+    parser.add_argument("-k", "--fixed_k", type=int, default=0, help="If set, solves only for this specific K")
     args = parser.parse_args()
 
-    # --- TOTO JE TÁ SLUČKA, KTORÁ TI CHÝBALA ---
+    # If user specified -k, solve only that instance (for generating files)
+    if args.fixed_k > 0:
+        K = args.fixed_k
+        print(f"Generating and solving instance for fixed K={K}...")
+        cnf, vars_count = encode(K)
+        res, t = call_solver(cnf, vars_count, args.output, args.solver, args.verb)
+        print_result(res, K, t)
+        sys.exit(0)
+
+    # Otherwise, find the maximum set size (Optimization)
+    print("Starting search for the maximum DNA word set size...")
     K = 1
-    max_found = 0
-    
+    max_k = 0
     while True:
-        print(f"Skúšam K={K} ... ", end="", flush=True)
+        cnf, vars_count = encode(K)
+        res, t = call_solver(cnf, vars_count, args.output, args.solver, args.verb)
         
-        # 1. Zakóduj pre číslo K
-        cnf, nr_vars = encode(K)
-        
-        # 2. Spusti solver
-        result = call_solver(cnf, nr_vars, args.output, args.solver, args.verb)
-        
-        # 3. Skontroluj výsledok
-        if result.returncode == 10: # SAT
-            print("OK!")
-            print_result(result, K)
-            max_found = K
-            K += 1 # Ideme skúsiť viac
+        if res.returncode == 10: # SAT
+            max_k = K
+            print_result(res, K, t)
+            K += 1
         else: # UNSAT
-            print("UNSAT (Nemožné).")
-            print(f"\n>>> KONIEC. Maximálna veľkosť sady je: {max_found}")
+            print(f"For K={K} solution does not exist (UNSAT).")
+            print(f"Maximum set size found is: {max_k}")
             break
