@@ -2,51 +2,24 @@ import subprocess
 import sys
 import time
 from argparse import ArgumentParser
+from itertools import combinations
 
 WORD_LENGTH = 8
 ALPHABET_SIZE = 4
 CHARS = "ACGT"
 
-
 def get_var_id(w, i, c):
     return (w * WORD_LENGTH * ALPHABET_SIZE) + (i * ALPHABET_SIZE) + c + 1
 
-
-def generate_combinations(elements, k):
-    if k == 0:
-        return [[]]
-    if not elements:
-        return []
-
-    head = elements[0]
-    tail = elements[1:]
-
-    with_head = []
-
-    for combo in generate_combinations(tail, k - 1):
-        with_head.append([head] + combo)
-
-    without_head = generate_combinations(tail, k)
-
-    return with_head + without_head
-
-
 def add_at_most_k(cnf, variables, k):
-    forbidden = generate_combinations(variables, k + 1)
-
-    for combo in forbidden:
-        clause = []
-        for var in combo:
-            clause.append(-var)
-        clause.append(0)  # line terminator
+    for combo in combinations(variables, k + 1):
+        clause = [-var for var in combo]
+        clause.append(0)
         cnf.append(clause)
-
 
 def encode(K):
     cnf = []
-
     num_basic_vars = K * WORD_LENGTH * ALPHABET_SIZE
-
     current_var = num_basic_vars + 1
 
     # Prave jedno pismeno na poziciu
@@ -56,7 +29,6 @@ def encode(K):
 
             # najmenej jedno
             cnf.append(vars_at_pos + [0])
-
             # najviac jedno
             add_at_most_k(cnf, vars_at_pos, 1)
 
@@ -92,7 +64,7 @@ def encode(K):
             # max 4 implikuje min 4
             add_at_most_k(cnf, matches, 4)
 
-    # REVERSE COMPLEMENT
+    # Reverse complement 
     for w1 in range(K):
         for w2 in range(K):  # Pozera vsetky dvojice, aj seba
             wc_matches = []
