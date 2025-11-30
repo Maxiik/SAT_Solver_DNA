@@ -1,102 +1,122 @@
-# **Word Design for DNA Computing on Surfaces**
+# DNA Word Design Problem - SAT Solver
 
-This project implements a SAT-based solver for the **Word Design for DNA Computing on Surfaces** problem. The goal is to generate the largest possible set of DNA words (strings of length 8 over the alphabet $\\{A, C, G, T\\}$) that satisfy specific combinatorial constraints used in bioinformatics and DNA computing.
+Cieľom je nájsť čo najväčšiu množinu slov dĺžky 8, ktoré spĺňajú špecifické podmienky.
 
-## **Problem Description**
+## 1. Popis problému
 
-We are looking for a set $S$ of words of fixed length $L=8$. The size of the set is denoted by $K = |S|$. The words must satisfy the following properties:
+Hľadáme množinu $S$ obsahujúcu $K$ slov nad abecedou $\{A, C, G, T\}$. Každé slovo má pevnú dĺžku $L=8$.
 
-1. **Length:** Each word has exactly $L=8$ characters.  
-2. **GC:** Each word must contain exactly 4 characters from the set $\{C, G\}$ (and consequently exactly 4 characters from $\{A, T\}$).  
-3. **Hamming Distance:** For every pair of distinct words $u, v \in S$, the Hamming distance $d_H(u, v) \ge 4$.  
-   * *Note:* This is equivalent to saying that they match in *at most* $4$ positions.  
-4. **Reverse Complement:** For every pair of words $u, v \in S$ (including the case where $u=v$), the Hamming distance between the reverse of $u$ ($u^R$) and the Watson-Crick complement of $v$ ($v^C$) must be at least $4$.  
-   * *Watson-Crick pairs:* $A \leftrightarrow T$, $C \leftrightarrow G$.
+### Parametre a rozhodovacie premenné
 
-### **Strategy**
+- **Abeceda:** 4 znaky (A, C, G, T).
+- **Dĺžka slova:** 8 znakov.
+- **Veľkosť množiny ($K$):** Počet hľadaných slov.
+- **Rozhodovacie premenné:**  
+  $X_{w,i,c}$ je binárna premenná, ktorá je pravdivá (True), ak slovo $w$ na pozícii $i$ obsahuje znak $c$.
 
-The script solves the decision problem "Does a set of size K exist?" iteratively for $K=1, 2,\dots$
+### Podmienky
 
-* If the solver returns **SAT**, we know that $K_{max} \ge K$.  
-* If the solver returns **UNSAT**, we know that $K_{max} < K$.  
-* If the solver **Times Out**, we cannot determine the truth value, but we establish a lower bound based on the last successful $K$.
+Riešenie musí spĺňať nasledujúce podmienky:
 
-## **Encoding**
+1. **Validita slova:**  
+   Na každej pozícii každého slova musí byť presne jeden znak.
 
-The problem is encoded into CNF using the DIMACS format. We use two types of variables: **Basic Variables** representing the characters, and **Auxiliary Variables** representing matching positions between words.
+2. **GC obsah:**  
+   Každé slovo musí obsahovať presne 4 znaky z množiny $\{C, G\}$ (a teda 4 znaky z $\{A, T\}$).
 
-### **Variables**
+3. **Hammingova vzdialenosť:**  
+   Každá dvojica rôznych slov $u, v \in S$ sa musí líšiť aspoň na 4 pozíciách ($H(u, v) \ge 4$).
 
-1\. Word Variables  
-Variables $X\_{w,i,c}$ represent that word number $w$ has character $c$ at position $i$.
+4. **Vzdialenosť voči reverznému komplementu:**  
+   Pre každú dvojicu slov $u, v \in S$ (vrátane prípadu $u=v$) musí platiť:  
+   $H(u, v^{RC}) \ge 4$  
+   kde $v^{RC}$ je reverzný komplement slova.
 
-* $w \in \{0, \dots, K-1\}$  
-* $i \in \{0, \dots, 7\}$  
-* $c \in \{0, 1, 2, 3\}$ (Mapping: 0=A, 1=C, 2=G, 3=T)
+5. **Reverzný komplement:**  
+   Vznikne otočením slova a zámennou A↔T, C↔G.
 
-2\. Match Indicator Variables  
-* $M_{w_1, w_2, i}$: True if word $w_1$ and word $w_2$ have the same character at position $i$.  
-* $WC_{w_1, w_2, i}$: True if word $w_1$ (reversed) and word $w_2$ (complemented) match at position $i$.
+---
 
-### **Constraints**
+## 2. Popis kódovania do CNF
 
-The following constraints are generated:
+Program generuje formulu v CNF vo formáte DIMACS.
 
-1. **Physical Constraints:**  
-   * At least one character per position: $\bigvee_{c} X_{w,i,c}$.  
-   * At most one character per position: $\neg X_{w,i,c_1} \lor \neg X_{w,i,c_2}$ for $c_1 \neq c_2$.  
-2. **GC-Content:**  
-   * We enforce that $\sum_{i} (X_{w,i,C} \lor X_{w,i,G}) = 4$.  
-   * This is implemented using **At-Most-K** constraints on the set of C/G variables and the set of A/T variables.  
-3. **Hamming Distance:**  
-   * We imply the match variable: $(X_{w_1,i,c} \land X_{w_2,i,c}) \implies M_{w_1, w_2, i}$.  
-   * We enforce that the total number of matches is at most 4: $\sum_{i} M_{w_1, w_2, i} \le 4$.  
-4. **Reverse Complement:**  
-   * We compare We compare $u[7-i]$ with $v[i]$. A match occurs if they form a Watson-Crick pair. A match occurs if they form a Watson-Crick pair.  
-   * We enforce that the total number of WC-matches is at most 4\.
+### Použité kódovanie
 
-For constraints of the form "At most $k$ variables are True", we use **Binomial Encoding**. We explicitly forbid every combination of $k+1$ variables.
+- **Premenné:**  
+  Mapovanie $(w, i, c)$ na celé číslo pomocou vzorca:  
+  $$(w \cdot WORD\_SIZE \cdot CHARS\_SIZE) + (i \cdot CHARS\_SIZE) + c + 1$$
 
-* For $L=8$, this is efficient. For example, ensuring "At most 4" requires forbidding all subsets of size 5\. The number of clauses is $\binom{8}{5} = 56$, which is negligible.
+- **At Most K:**  
+  Použité **Binomial Encoding**.
 
-## **User Documentation**
+  Pre obmedzenie $\sum x_i \le k$ sú generované klauzuly pre každú kombináciu $k+1$ premenných, ktoré sa nesmú vyskytovať súčasne.
 
-The script requires **Python 3** and **Glucose**.
+  **Príklad:**  
+  Pre „maximálne 1 znak na pozícii“ (k = 1):  
+  - $(\neg A \lor \neg C)$  
+  - $(\neg A \lor \neg G)$  
+  - …
 
-### **Basic Usage**
+  Na zabezpečenie $H(u,v) \ge d$ (t. j. počet zhôd ≤ L−d) sú zavedené pomocné premenné `match`.
 
-./dna\_solver.py \[-h\] \[-s SOLVER\] \[-o OUTPUT\] \[-v {0,1}\] \[-k FIXED\_K\]
+  Implikácia:  
+  $(x_{w1} \land x_{w2}) \implies match$  
+  sa prevedie na klauzulu:  
+  $(\neg x_{w1} \lor \neg x_{w2} \lor match)$
 
-### **Command-line Options**
+  Následne sa na sumu premenných `match` aplikuje **At Most K**.
 
-* \-h, \--help: Show help message and exit.  
-* \-s SOLVER: Path to the solver executable (default: glucose).  
-* \-o OUTPUT: Output filename for the generated CNF (default: formula.cnf).  
-* \-v {0,1}: Verbosity of the solver output (default: 1).  
-* \-k FIXED\_K: If set to a positive integer, the script solves for a specific set size $K$ and exits. If not set, it runs in optimization mode (finding max $K$).
+### Spustenie
 
-## **Example Instances**
+```bash
+python3 word_desing_dna.py [-h] [-s SOLVER] [-o OUTPUT] [-v {0,1}] [-k FIXED_K]
+```
 
-The following instances are included in the solution:
+### Argumenty
 
-* **small\_sat.cnf**: A trivial instance for $K=2$. Solvable immediately.   
-* **big\_instance.cnf**: A large satisfiable instance ($K=74$). This represents the limit of what can be solved within a reasonable timeframe using this encoding.
+- `-o, --output` — názov výstupného CNF súboru (default: `formula.cnf`)  
+- `-s, --solver` — cesta k solveru (default: `glucose-syrup`)  
+- `-v, --verb` — verbosity solvera 
+- `-k, --fixed_k` — vyrieši len pre konkrétne $K$
 
-## **Experiments**
+### Formát výstupu
 
-Experiments were run on **Intel Core i7-10510U (1.80 GHz)** with **32 GB RAM**. The solver used was Glucose 4.1.
+Ak je riešenie **SAT**, vypíšeme nájdené slová:
 
-We focused on finding the maximum set size $K$.
+```
+For K=2: SAT. Time: 0.05s
+----------------------------------------
+Word 1: ACGTACGT
+Word 2: GGTCCATG
+----------------------------------------
+```
+## 5. Experimenty
 
-| Set Size (K) | Result | Time (s) |
-| :---- | :---- | :---- |
-| 10 | SAT | 0.60 |
-| 30 | SAT | 3.13 |
-| 50 | SAT | 4.28 |
-| 70 | SAT | 15.89 |
-| 74 | SAT | 572.20 |
-| 75 | **Timeout** | \> 600.0 |
+Experimenty boli vykonané na nasledujúcej konfigurácii:
 
-Observations:  
-The time complexity grows exponentially with $K$.
-We observed a significant **difference** between $K=70$ and $K=74$. The computation time jumped from \~16 seconds to nearly 10 minutes. At $K=75$, the solver could not find a solution or prove unsatisfiability within a reasonable time limit, suggesting that the problem instance becomes exceptionally hard at this boundary.
+- **CPU:** Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz  
+- **RAM:** 32 GB  
+- **OS:** Windows 11 Pro (WSL/Linux prostredie)  
+- **Solver:** glucose-syrup  
+
+### Výsledky škálovania
+
+Skript dokázal v rozumnom čase nájsť riešenie pre **K = 72** slov.
+
+| K | Čas výpočtu | Výsledok |
+|---|-------------|----------|
+| 10 | 0.79 s  | SAT |
+| 20 | 1.82 s  | SAT |
+| 40 | 4.22 s  | SAT |
+| 50 | 9.94 s  | SAT |
+| 60 | 14.20 s | SAT |
+| 70 | 46.27 s | SAT |
+| 72 | 68.80 s | SAT |
+
+### Pozorovania
+
+- **Malé inštancie ($K \le 30$):** riešenie sa nájce veľmi rýchlo, často do 3 sekúnd.  
+- **Nelineárny nárast náročnosti:** od $K = 50$ začína čas rásť strmšie; medzi $K = 60$ a $K = 72$ je zrýchlenie rastu výrazné (viac ako 4×).  
+- **Maximálna dosiahnutá veľkosť:**  
+  Skript úspešne vygeneroval **72 slov** spĺňajúcich všetky kritériá (GC obsah, Hamming, RC Hamming).
