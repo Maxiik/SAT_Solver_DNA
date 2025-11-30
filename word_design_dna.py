@@ -3,29 +3,15 @@ import sys
 import time
 from argparse import ArgumentParser
 
-# ==============================================================================
-# PROBLEM SETTINGS (DNA Word Set Design)
-# ==============================================================================
 WORD_LENGTH = 8      # Length of one word
-ALPHABET_SIZE = 4    # Size of the alphabet (A, C, G, T)
-CHARS = "ACGT"       # Mapping: 0=A, 1=C, 2=G, 3=T
-
-# ==============================================================================
-# HELPER FUNCTIONS (Manual implementation without external libraries)
-# ==============================================================================
+ALPHABET_SIZE = 4    
+CHARS = "ACGT"       # 0=A, 1=C, 2=G, 3=T
 
 def get_var_id(w, i, c):
-    """
-    Maps the triplet (word_index, position, char_index) to a single integer for the SAT solver.
-    w: word index (0..K-1)
-    i: position in word (0..WORD_LENGTH-1)
-    c: character index (0..3)
-    """
     # +1 because DIMACS format requires variables starting from 1
     return (w * WORD_LENGTH * ALPHABET_SIZE) + (i * ALPHABET_SIZE) + c + 1
 
 def generate_combinations(elements, k):
-    """Recursively generates all combinations of length k from the list 'elements'."""
     if k == 0:
         return [[]]
     if not elements:
@@ -34,7 +20,6 @@ def generate_combinations(elements, k):
     head = elements[0]
     tail = elements[1:]
     
-    # Recursion: either we include the head or we don't
     with_head = []
     for combo in generate_combinations(tail, k - 1):
         with_head.append([head] + combo)
@@ -44,10 +29,6 @@ def generate_combinations(elements, k):
     return with_head + without_head
 
 def add_at_most_k_constraint(cnf, variables, k):
-    """
-    Adds clauses to CNF ensuring that at most 'k' variables from the list are True.
-    Principle: We forbid all combinations of size k+1.
-    """
     forbidden_combinations = generate_combinations(variables, k + 1)
     
     for combo in forbidden_combinations:
@@ -58,20 +39,11 @@ def add_at_most_k_constraint(cnf, variables, k):
         clause.append(0) # 0 is the line terminator in DIMACS
         cnf.append(clause)
 
-# ==============================================================================
-# ENCODING (Translation to CNF)
-# ==============================================================================
-
 def encode(K):
-    """
-    Generates CNF formula for finding a set of K words.
-    Returns: (list_of_clauses, number_of_variables_used)
-    """
     cnf = []
     
-    # Basic variables for letters
     num_basic_vars = K * WORD_LENGTH * ALPHABET_SIZE
-    # Auxiliary variables start after the basic ones
+
     current_aux_var = num_basic_vars + 1
 
     # 1. PHYSICAL CONSTRAINTS: Exactly one letter per position
@@ -87,8 +59,8 @@ def encode(K):
 
     # 2. GC-CONTENT: Exactly 4 characters must be C or G
     for w in range(K):
-        cg_vars = [] # C(1) or G(2)
-        at_vars = [] # A(0) or T(3)
+        cg_vars = []
+        at_vars = []
         for i in range(WORD_LENGTH):
             cg_vars.append(get_var_id(w, i, 1))
             cg_vars.append(get_var_id(w, i, 2))
@@ -104,7 +76,6 @@ def encode(K):
         for w2 in range(w1 + 1, K):
             matches = []
             for i in range(WORD_LENGTH):
-                # Create a new auxiliary variable for match at this position
                 p_var = current_aux_var
                 current_aux_var += 1
                 matches.append(p_var)
@@ -128,11 +99,9 @@ def encode(K):
                 current_aux_var += 1
                 wc_matches.append(wc_var)
                 
-                # Compare w1[end-i] with w2[i]
                 pos_1 = WORD_LENGTH - 1 - i
                 
                 # Watson-Crick pairs: A-T, T-A, C-G, G-C
-                # Indices: 0-3, 3-0, 1-2, 2-1
                 pairs = [(0,3), (3,0), (1,2), (2,1)]
                 
                 for c1, c2 in pairs:
@@ -145,31 +114,22 @@ def encode(K):
 
     return cnf, current_aux_var - 1
 
-# ==============================================================================
-# RESULT PROCESSING
-# ==============================================================================
-
 def call_solver(cnf, nr_vars, output_name, solver_name, verbosity):
-    # Write to DIMACS format
     with open(output_name, "w") as file:
         file.write(f"p cnf {nr_vars} {len(cnf)}\n")
         for clause in cnf:
             file.write(" ".join(map(str, clause)) + "\n")
 
-    # Run the solver
     cmd = ['./' + solver_name, '-model', '-verb=' + str(verbosity), output_name]
+    
     try:
         start_time = time.time()
-        # Capture both stdout and stderr
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         end_time = time.time()
         return result, end_time - start_time
     except FileNotFoundError:
-        # Fallback for Windows if .exe extension is missing
-        if not solver_name.endswith(".exe"):
-            cmd[0] += ".exe"
-            return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE), 0
-        raise
+        print(f"\nERROR: The solver '{solver_name}' was not found in the current directory.")
+        sys.exit(1)
 
 def print_result(result, K, time_taken):
     # Check return code (10 = SAT, 20 = UNSAT)
